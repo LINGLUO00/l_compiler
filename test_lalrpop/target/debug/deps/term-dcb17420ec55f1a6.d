@@ -1,0 +1,12 @@
+/home/hyl/l_compiler/test_lalrpop/target/debug/deps/libterm-dcb17420ec55f1a6.rmeta: /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/lib.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/mod.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/searcher.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parser/compiled.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parser/names.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parm.rs
+
+/home/hyl/l_compiler/test_lalrpop/target/debug/deps/libterm-dcb17420ec55f1a6.rlib: /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/lib.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/mod.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/searcher.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parser/compiled.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parser/names.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parm.rs
+
+/home/hyl/l_compiler/test_lalrpop/target/debug/deps/term-dcb17420ec55f1a6.d: /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/lib.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/mod.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/searcher.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parser/compiled.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parser/names.rs /home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parm.rs
+
+/home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/lib.rs:
+/home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/mod.rs:
+/home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/searcher.rs:
+/home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parser/compiled.rs:
+/home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parser/names.rs:
+/home/hyl/.cargo/registry/src/rsproxy.cn-0dccff568467c15b/term-0.7.0/src/terminfo/parm.rs:
