@@ -1,7 +1,7 @@
 // lalrpop 里的约定
 grammar;
 
-use crate::ast_def::{Block, CompUnit, FuncDef, FuncType, Stmt};
+use crate::ast_def::*;
 
 // 约束 lexer 的行为
 match {
@@ -22,13 +22,13 @@ FuncDef: FuncDef = {
   }
 }
 
-FuncType: FuncType = "int" => FuncType::Int;
+FuncType: FuncType = "int" => FuncType {ret_ty:koopa::ir::TypeKind::Int32};
 
 Block: Block = "{" <stmt: Stmt> "}" => Block { stmt };
 
-Stmt: Stmt = "return" <num: Number> ";" => Stmt { <> };
+Stmt: Stmt = "return" <ret_num: Number> ";" => Stmt { <> };
 
-Number: i32 = <num: IntConst> => <>;
+Number: i32 = <ret_num: IntConst> => <>;
 
 // 如果匹配到标识符, 就返回这个字符串
 // 一对尖括号在此处指代的是正则表达式匹配到的字符串 (&str)

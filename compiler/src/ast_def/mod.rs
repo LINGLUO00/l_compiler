@@ -1,41 +1,22 @@
-//根据EBNF定义语法树的结构
-//CompUnit  ::= FuncDef;
+//! AST定义模块入口
 
-//FuncDef   ::= FuncType IDENT "(" ")" Block;
-//FuncType  ::= "int";
+pub mod symbols;
+pub mod decl;
+pub mod stmt;
+pub mod expr;
 
-//Block     ::= "{" Stmt "}";
-//Stmt      ::= "return" Number ";";
-//Number    ::= INT_CONST;
-
-
-
-
-//定义各种ast结构体
-#[derive(Debug)]
-pub struct CompUnit {
-    pub func_def: FuncDef,
-  }
+use self::decl::FuncDef;
+use self::symbols::FuncType;
 
 #[derive(Debug)]
-pub struct FuncDef {
-    pub func_type: FuncType,
-    pub ident: String,
-    pub block: Block,
+pub enum CompUnit {
+    Default(Vec<Unit>),
 }
 
 #[derive(Debug)]
-pub enum FuncType{
-    Int,
-}
-
-#[derive(Debug)]
-pub struct Block {
-    pub stmt: Stmt,
-}
-
-
-#[derive(Debug)]
-pub struct Stmt {
-    pub num:i32,
+pub enum Unit{
+    //声明单元
+    //Decl(Decl),
+    //函数定义单元
+    FuncDef(FuncDef),
 }
