@@ -57,3 +57,31 @@ impl IRBuilder for Unit{
     Ok(IRBuildResult::OK)
     }
 }
+
+fn new_local_value_builder<'a>(
+    program:&'a mut Program,
+    ir_gen_info:&'a mut IRGeneratorInfo,
+)-> koopa::ir::builder::LocalBuilder<'a>{
+    program
+        .func_mut(
+            ir_gen_info.curr_func.expect("You should use create_new_global_value when curr_func is None!")
+        )
+        .dfg_mut()
+        .new_value()
+
+}
+
+fn insert_local_instructions<T>(
+    program:&mut Program,
+    ir_gen_info:&mut IRGeneratorInfo,
+    instructions:T
+)where 
+    T:IntoIterator<Item = >,
+{
+    program
+        .func_mut(ir_gen_info.curr_func.unwrap())
+        .layout_mut()
+        .bb_mut(ir_gen_info.curr_block.unwrap())
+        .insts_mut()
+        .extend(instructions);
+}

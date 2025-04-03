@@ -16,7 +16,7 @@ pub enum CompUnit {
 #[derive(Debug)]
 pub enum Unit{
     //声明单元
-    //Decl(Decl),
+    Decl(Decl),
     //函数定义单元
     FuncDef(FuncDef),
 }

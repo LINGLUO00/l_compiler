@@ -1,0 +1,325 @@
+use crate::ast_def::{*, decl::*, expr::*, stmt::*, symb::*};
+use koopa::ir::TypeKind::{self,Int32};
+use crate::ast_def::stmt::BasicStmt::IfStmt;
+use crate::ast_def::stmt::BasicStmt::WhileStmt;
+
+
+//lalrpop的约定：以grammar开头
+grammar;
+
+//注：问号表示零个或一个，会把参数变为Option类型
+//星号是零个或多个，会把参数变为Vec类型
+//加号是一个或多个，会把参数变为Vec类型
+
+
+//约束lexer的行为
+//在rust中，避免\被识别为转义，可以使用r""结构，表示“”内的符号是原始含义
+match{
+    //跳过空白符
+    r"\s*"=>{},//跳过任意数量的空白符号，包括制表符\t,换行符\n,回车符\r,空格符" "等
+    //跳过行注释
+    r"//[^\r\n]*\r?\n?"=>{},//跳过以//开头的行注释，直到换行符\n
+    //跳过块注释
+    r"/\*([^*]|\*[^/])*\*+/" =>{},//跳过以/*开头的块注释，直到*/结束
+    //其他情况采用默认方式处理
+    _
+}
+
+//定义CompUnit，其返回值类型为String
+//parser在解析完成后的行为是返回FuncDef的值
+//解释一下lalrpop的语法规则，以CompUnit为例
+//第一个 CompUnit为 语法规则名称（非终结符）
+//第二个 CompUnit为 规则对应的 Rust 类型（AST 节点类型）
+//第一个CompUnit是一个非终结符，表示一个完整的程序单元，其返回值类型是 Rust 中的 CompUnit（第二个）类型
+//第二个CompUnit由多个Unit组成，每个Unit可以是一个函数定义、变量声明等
+//Unit是一个另一个语法规则或着终结符，表示一个具体的语法单元
+//(Unit)*会匹配重复的 Unit，生成Vec<Unit>，Vec<Unit>就是compile_units的类型
+//< > 符号 是 语法规则中的绑定语法，用于将匹配到的语法元素绑定到变量，以便后续转换为 AST 节点
+//<var: Pattern> 表示将匹配到的 Pattern（语法模式）绑定到变量 var
+//变量用途：后续可以通过 var 访问匹配到的内容，用于生成 AST 或执行其他逻辑
+//Pattern 可以是终结符（如标识符、关键字）、非终结符（如其他语法规则），或它们的组合（如重复、可选）
+pub CompUnit: CompUnit=<vec_items:(Item)*> => CompUnit{items: vec_items};
+
+ 
+// 输入流会被 顺序尝试匹配 这两个分支。
+// 若输入是 FuncDef（如 main 函数），则触发 分支 1，返回 Item::FuncDef(func_def)。
+// 若输入是 Decl（如全局变量声明），则触发 分支 2，返回 Item::Decl(decl)
+// 注意，Item::FuncDef(func_def) 仍然是 Item 类型，它们都是 Item 类型的实例
+pub Item: Item={
+    <func_def:FuncDef> => Item::FuncDef(func_def),
+    <decl:Decl> => Item::Decl(decl),
+}
+
+FuncDef: FuncDef = {
+    <func_type:BaseType> <fun_id:Ident> "(" <params:(FuncFormalParams) ?> ")"  <block:Block>  =>{
+        //增加验证是否有参数的逻辑
+        //因为params是Option类型，但是我们的FuncDef的第三个参数是Vec类型
+        //所以如果params是None，则vec_params为空Vec
+        //如果params是Some，则vec_params为Some的值
+        //这样就实现了把Option类型转换为Vec类型
+        let mut vec_params = Vec::<FuncFormalParam>::new();
+        if let Some(params) = params{
+            vec_params.extend(params);
+        } 
+        return FuncDef::NormalFunc(func_type, fun_id, vec_params, block);
+      }
+}
+
+//单参数
+FuncFormalParam: FuncFormalParam = {
+  //函数参数int c[10][]...
+    <param_type:BaseType> <param_id:Ident> <indexes:("[" <Expr>"]")*> => {
+      if indexes.is_empty(){
+        return FuncFormalParam::NormalFuncFormalParam(param_type, param_id, None);
+      }
+      else{
+      return FuncFormalParam::NormalFuncFormalParam(param_type, param_id, Some(indexes));
+      }
+    }
+}
+
+//多参数与无参数
+FuncFormalParams: Vec<FuncFormalParam> = {
+  //无参数
+  //=> vec![],//这里不需要,因为FuncDef利用*定义了这种可能
+  //多个参数
+  <param1:FuncFormalParam> <param2toEnd:("," <FuncFormalParam> )*> =>{
+    let mut vec_params = vec![param1];
+    //vec_params.extend(param2toEnd.into_iter().map(|(_, param)| param));需要这个吗？//TODO
+    vec_params.extend(param2toEnd);
+    vec_params
+  }
+}
+
+Block: Block = {
+    "{" <block_items:BlockItem *> "}" => Block::NormalBlock(block_items)
+}
+
+BlockItem: BlockItem = {
+  <decl: Decl> => BlockItem::Decl(decl), 
+  <stmt: Stmt> => BlockItem::Stmt(stmt), 
+}
+
+Decl: Decl = {
+  <c: ConstDecl> => Decl::ConstDecl(c), 
+  <v: VarDecl> => Decl::VarDecl(v), 
+}
+
+ConstDecl: ConstDecl = {
+  //常量声明：单个和多个,比如const int a=1,b=2,c=3;
+  "const" <const_type:BaseType> <constdef1:ConstDef> <constdefs:(","<ConstDef>)*> ";" => {
+    let mut vec_constdefs = vec![constdef1];
+    vec_constdefs.extend(constdefs);
+    ConstDecl::NormalConstDecl(const_type, vec_constdefs)
+  }
+}
+
+ConstDef: ConstDef = { 
+  <ident: Ident> <shape: ("[" <Expr> "]")*> "=" <init_val: InitVal> => ConstDef::NormalConstDef(ident, shape, init_val),
+}
+
+VarDecl: VarDecl =  {
+  //比如：int a=1,b=2,c=3;或者int a;注意，不支持连续赋值，即int a=b=1;
+  <base_type:BaseType> <vardef1:VarDef> <vardef2toEnd:(","<VarDef>)*> ";" =>{
+    let mut vec_vardefs = vec![vardef1];
+    vec_vardefs.extend(vardef2toEnd);
+    VarDecl::NormalVarDecl(base_type, vec_vardefs)
+  }
+}
+
+VarDef: VarDef = {
+  <ident: Ident> <shape: ("[" <Expr> "]")*>  <init_val: ("="InitVal)?> => {
+    //如果init_val为空，则init_val为None
+    //如果init_val不为空，则init_val为Some(init_val)
+    if init_val.is_none(){
+      return VarDef::NormalVarDef(ident, shape, None);
+    }
+    else{
+      let init_val_opt = init_val.map(|(_, val)| val);
+      VarDef::NormalVarDef(ident, shape, init_val_opt)
+    }
+  }
+}
+
+InitVal: InitVal = {
+  <expr: Expr> => InitVal::Expr(expr),
+
+  //int arr2[][2] = {{1, 2}, {3, 4}}；或者int arr2[2][2] = {}；
+  "{""}"=>InitVal::Aggregate(Vec::<Box<InitVal>>::new()),
+
+  "{" <val1: InitVal> <val2toEnd:(","<InitVal>)*>"}" => {
+    let mut vec_vals = Vec::<Box<InitVal>>::new();
+    vec_vals.push(Box::new(val1)); //val1是InitVal类型
+    for val in val2toEnd{
+      vec_vals.push(Box::new(val));
+    }
+    InitVal::Aggregate(vec_vals)
+   }
+}
+
+
+Stmt: Stmt = {
+  <us: UnmatchedStmt> => Stmt::UnmatchedStmt(us), 
+  <ms: MatchedStmt> => Stmt::MatchedStmt(ms), 
+}
+
+MatchedStmt:MatchedStmt={
+  //完全闭合的匹配语句
+  //1.带else的if语句,注：结构体字段初始化：用 { 字段名: 值 } 语法
+  "if" "(" <expr:Expr> ")" <matched_stmt:MatchedStmt> "else" <else_stmt:MatchedStmt> => MatchedStmt{NormalMatchedStmt:BasicStmt::IfStmt(expr, Box::new(matched_stmt.NormalMatchedStmt), Box::new(Some(else_stmt.NormalMatchedStmt)))},
+  //2.while(x) matched_stmt
+  "while" "("<expr:Expr> ")" <matched_stmt:MatchedStmt>=> MatchedStmt{NormalMatchedStmt:BasicStmt::WhileStmt(expr, Box::new(matched_stmt.NormalMatchedStmt))},
+  //3. for(i=0;i<10;i++) matched_stmt
+  //<for_stmt: ForStmt> => MatchedStmt::For(for_stmt),
+  //4.赋值语句
+  <left_val:LeftVal> "=" <expr:Expr> ";" => MatchedStmt{NormalMatchedStmt:BasicStmt::AssignStmt(left_val, expr)},
+  //5.表达式语句
+  <expr:(Expr)?> ";" => MatchedStmt{NormalMatchedStmt:BasicStmt::Expr(expr)},
+  //6.复合语句,代码块
+  <block:Block> => MatchedStmt{NormalMatchedStmt: BasicStmt::Block(block)},
+  //控制语句
+  //1.return语句，比如：return 1; 或者return a+b;或者 return；
+  "return"<return_expr:(Expr)?> ";"=> MatchedStmt{NormalMatchedStmt:BasicStmt::ReturnStmt(return_expr)},
+  //2. break语句，比如：break;
+  "break" ";" => MatchedStmt{NormalMatchedStmt:BasicStmt::BreakStmt},
+  "continue" ";" => MatchedStmt{NormalMatchedStmt:BasicStmt::ContinueStmt},
+}
+
+
+UnmatchedStmt: UnmatchedStmt = {
+  //未完全闭合的非匹配语句
+  //1. 不带else的if语句
+  //if(){if(){}else{}},外层 if 的 body 是完整的 MatchedStmt（内层 if-else），但外层 if 没有 else，所以整个结构标记为 UnmatchedStmt
+  "if" "(" <expr:Expr> ")" <matched_stmt:MatchedStmt> => UnmatchedStmt{NormalUnmatchedStmt:IfStmt(expr, Box::new(matched_stmt.NormalMatchedStmt),Box::new(None))},
+  //if(){if(){}}，外层 if 的 body 是内层未闭合的 if 语句，因此整体标记为 UnmatchedStmt
+  "if" "(" <expr:Expr> ")" <unmatched_stmt:UnmatchedStmt> => UnmatchedStmt{NormalUnmatchedStmt:IfStmt(expr, Box::new(unmatched_stmt.NormalUnmatchedStmt), Box::new(None))},
+  //if(){} else if(){},else 后跟随未闭合的 if（无后续 else），导致整个 if-else 结构仍为未闭合
+  "if" "(" <expr:Expr> ")" <matched_stmt:MatchedStmt> "else" <unmatched_stmt:UnmatchedStmt> => UnmatchedStmt{NormalUnmatchedStmt:IfStmt(expr, Box::new(matched_stmt.NormalMatchedStmt), Box::new(Some(unmatched_stmt.NormalUnmatchedStmt)))},
+  //2.while(){if(){}},while 的循环体是未闭合的 if 语句，因此整个 while 标记为未闭合
+  "while" "(" <expr:Expr> ")" <unmatched_stmt:UnmatchedStmt> => UnmatchedStmt{NormalUnmatchedStmt:WhileStmt(expr, Box::new(unmatched_stmt.NormalUnmatchedStmt))},
+  //注:如何思考if的各种情况
+  //从最完整的if-else语句开始，if(){if-else}else{if-else}开始
+  //先去掉整个最外层的else，变为if(){if-else}
+  //再去掉里面的else
+  //不断重复
+}
+
+
+Expr:Expr={
+  <logic_or_expr:LogicOrExpr> => Expr::LogicOrExpr(logic_or_expr),
+}
+
+LogicOrExpr:LogicOrExpr={
+  <logic_and_expr:LogicAndExpr> => LogicOrExpr::LogicAndExpr(logic_and_expr),
+  <logic_or_expr:LogicOrExpr> "||" <logic_and_expr:LogicAndExpr> => LogicOrExpr::BinaryLogicOrExpr(Box::new(logic_or_expr), logic_and_expr),
+}
+ 
+LogicAndExpr:LogicAndExpr={
+  <eq_expr:EqExpr> => LogicAndExpr::EqExpr(eq_expr),
+  <logic_and_expr:LogicAndExpr> "&&" <eq_expr:EqExpr> => LogicAndExpr::BinaryLogicAndExpr(Box::new(logic_and_expr), eq_expr),
+}
+
+EqExpr:EqExpr={
+  <rel_expr:RelExpr> => EqExpr::RelExpr(rel_expr),
+  <eq_expr:EqExpr> "==" <rel_expr:RelExpr> => EqExpr::BinaryEqExpr(Box::new(eq_expr), rel_expr),
+  <eq_expr:EqExpr> "!=" <rel_expr:RelExpr> => EqExpr::BinaryEqExpr(Box::new(eq_expr), rel_expr),
+}
+
+RelExpr:RelExpr={
+  <add_expr:AddExpr> => RelExpr::AddExpr(add_expr),
+  <rel_expr:RelExpr> "<" <add_expr:AddExpr> => RelExpr::BinaryLtExpr(Box::new(rel_expr), add_expr),
+  <rel_expr:RelExpr> "<=" <add_expr:AddExpr> => RelExpr::BinaryLeExpr(Box::new(rel_expr), add_expr),
+  <rel_expr:RelExpr> ">" <add_expr:AddExpr> => RelExpr::BinaryGtExpr(Box::new(rel_expr), add_expr),
+  <rel_expr:RelExpr> ">=" <add_expr:AddExpr> => RelExpr::BinaryGeExpr(Box::new(rel_expr), add_expr),
+}
+
+AddExpr:AddExpr={
+  <mul_expr:MulExpr> => AddExpr::MulExpr(mul_expr),
+  <add_expr:AddExpr> "+" <mul_expr:MulExpr> => AddExpr::BinaryAddExpr(Box::new(add_expr), mul_expr),
+  <add_expr:AddExpr> "-" <mul_expr:MulExpr> => AddExpr::BinarySubExpr(Box::new(add_expr), mul_expr),
+}
+
+MulExpr:MulExpr={
+  <unary_expr:UnaryExpr> => MulExpr::UnaryExpr(unary_expr),
+  <mul_expr:MulExpr> "*" <unary_expr:UnaryExpr> => MulExpr::BinaryMulExpr(Box::new(mul_expr), unary_expr),
+  <mul_expr:MulExpr> "/" <unary_expr:UnaryExpr> => MulExpr::BinaryDivExpr(Box::new(mul_expr), unary_expr),
+  <mul_expr:MulExpr> "%" <unary_expr:UnaryExpr> => MulExpr::BinaryModExpr(Box::new(mul_expr), unary_expr),
+}
+
+// 假设函数调用为 func(1, a + 2, foo())：
+// 解析结果：vec![Exp::Literal(1), Exp::Add(a, 2), Exp::FuncCall("foo", vec![])]
+FuncRightParams:Vec<Expr>={
+    //无参数
+    //=> vec![],//这里不需要，因为FuncCall定义了这种可能
+    //有参数
+    <param1:Expr> <param2toEnd:(","<Expr>)*> => {
+        let mut vec_params = vec![param1];
+        //vec_params.extend(param2toEnd.into_iter().map(|(_, param)| param));需要这个吗？//TODO
+        vec_params.extend(param2toEnd);
+        vec_params
+    }
+}
+
+UnaryExpr:UnaryExpr={
+  <primary_expr:PrimaryExpr> => UnaryExpr::PrimaryExpr(primary_expr),
+  
+  //一元运算符
+  "+" <unary_expr:UnaryExpr> => UnaryExpr::UnaryPlusExpr(Box::new(unary_expr)),
+  "-" <unary_expr:UnaryExpr> => UnaryExpr::UnaryMinusExpr(Box::new(unary_expr)),
+  "!" <unary_expr:UnaryExpr> => UnaryExpr::UnaryNotExpr(Box::new(unary_expr)),
+  //"~" <unary_expr:UnaryExpr> => UnaryExpr::UnaryBitNot(unary_expr),
+  
+  //FuncCall
+  <ident:Ident> "(" <params:(FuncRightParams)?> ")" => {
+    //如果vec_params为空，则vec_params为None
+    //如果vec_params不为空，则vec_params为Some(vec_params)
+    if params.is_none(){
+      return UnaryExpr::FuncCall(ident, vec![]);
+    }
+    else{
+      let mut vec_params = Vec::<Expr>::new();
+      if let Some(ps) = params{
+        vec_params.extend(ps);
+      }
+      return UnaryExpr::FuncCall(ident, vec_params);
+    }
+  }
+}
+
+PrimaryExpr:PrimaryExpr={
+  //比如：数字1, 2, 3.14
+  <literal:Literal> => PrimaryExpr::Literal(literal),
+  //比如：标识符a, b, c
+  <left_val:LeftVal> => PrimaryExpr::LeftVal(left_val),
+  //比如：（a+b）
+  "(" <expr:Expr> ")" => PrimaryExpr::BracedExpr(Box::new(expr)),
+}
+
+LeftVal:LeftVal={
+  //标识符,比如：a, b, c
+  //数组下标，比如：a[1], b[2]
+  <ident:Ident> <indexes: ("[" <Expr> "]")*> => LeftVal::NormalLeftVal(ident, indexes),
+}
+
+Literal:Literal={
+  //整数
+  <int_const: IntConst> => Literal::IntConst(int_const),
+}
+
+Ident:Ident = {
+  r"[a-zA-Z_][a-zA-Z0-9_]*" => Ident{ident:<>.to_string()},
+}
+
+BaseType:BaseType = {
+  "int" => BaseType{base_type:koopa::ir::TypeKind::Int32},
+  //"void" => BaseType{base_type:TypeKind::Unit},
+}
+
+//注：<> 表示正则表达式匹配到的完整字符串，如 0x1A3
+IntConst: i32 = {
+  r"[1-9][0-9]*" => i32::from_str_radix(<>, 10).unwrap(),
+  r"0[0-7]*" => i32::from_str_radix(<>, 8).unwrap(),
+  //<>[2..] 的作用：从索引 2 开始截取子字符串，即跳过前缀 0x 或 0X，保留后面的十六进制数值部分
+  //& 的作用：对切片后的子字符串（如 "1A3"）创建引用，直接传递到 from_str_radix 方法中，无需复制数据
+  r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
+}
