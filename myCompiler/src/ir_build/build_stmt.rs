@@ -1,9 +1,9 @@
-use ast_def::stmt::*;
+use crate::ast_def::stmt::*;
 use koopa::ir::{builder_traits::*, Program};
 
 use super::{
-    build_expr::{IRExpBuildResult, IRExpBuildable, IRLeftValBuildResult},
-    IRBuildResult, IRBuildable, MyIRGeneratorInfo,
+    build_expr::IRLeftValBuildResult,
+    IRBuildResult, IRBuildable,
     context::*,
     append_basic_block, 
     create_basic_block, create_local_value, emit_instructions, 

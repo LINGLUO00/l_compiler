@@ -159,6 +159,7 @@ fn emit_instructions<T>(
         .extend(instructions)//目的是将指令插入到当前基本块中，如果它返回None，就会触发ok_or_else，ok_or_else就会将None转换为Err(String),并通过闭包生成一个错误信息
 }
 
+
 //向当前函数的数据流图追加基本块集合
 fn append_basic_block<T>(
     program:&mut Program,

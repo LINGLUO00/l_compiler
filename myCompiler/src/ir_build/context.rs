@@ -31,6 +31,17 @@ pub struct IRBuilderCtx {
     //type_registry: TypeRegistry,       // 类型信息注册表，这里不需要，用koopair的Type库就可以
 }
 
+// 控制流作用域
+#[derive(Debug)]
+pub enum ControlFlowScope {
+    Loop {
+        continue_target: BasicBlock,
+        break_target: BasicBlock,
+    },
+    If {
+        break_target: BasicBlock,
+    },
+}
 
 impl IRBuilderCtx{
     // 创建一个新的IRBuilderCtx实例
@@ -49,39 +60,30 @@ impl IRBuilderCtx{
         }
     }
 
-    //确保全局符号表不存在重复定义的符号（变量，函数等），处理同一作用域内重复定义变量，处理函数名与全局变量名冲突
-    pub fn check_duplicate_global_symbol(&self, name: &str) -> Result<(), CompileError> {
-        // 安全访问全局作用域
-        let global_scope = self.symbol_table.global_scope()
-            .ok_or(CompileError::InvalidScope)?;
-    
-        // 检测所有符号类型
-        if let Some(entry) = global_scope.get(name) {
-            match entry {
-                SymbolTableEntry::Variable(..) => 
-                    Err(CompileError::DuplicateSymbol(name.into())),
-                SymbolTableEntry::Constant(..) if !allow_redef_const =>
-                    Err(CompileError::DuplicateConst(name.into())),
-                    _ => Ok(()) // 其他类型不冲突
+    // 检查是否已存在相同名称的全局符号
+    pub fn check_duplicate_global_symbol(&self, name: &str) -> bool {
+        // 检查全局作用域中是否存在相同名称的符号
+        if let Some(global_scope) = self.symbol_table.global_scope() {
+            if global_scope.contains_key(name) {
+                return true;
             }
-        } 
-        else if self.function_table.contains_key(name) {
-            Err(CompileError::FuncVarConflict(name.into()))
-        } 
-        else {
-            Ok(())
         }
+        
+        // 检查函数表中是否存在相同名称的函数
+        self.function_table.contains_key(name)
     }
-    //
 }
 
-
-
-
-
-
+//错误定义
+#[derive(Debug)]
+pub enum SymbolError {
+    NoActiveScope,
+    DuplicateSymbol(String),
+    SymbolNotFound(String),
+}
 
 //符号表管理
+#[derive(Debug)]
 pub struct SymbolTableStack{
     // 符号表栈
     /*
@@ -135,30 +137,30 @@ impl SymbolTableStack{
 
     //向当前作用域添加新符号
     pub fn insert_symbol(&mut self, name:&str, entry:SymbolTableEntry)->Result<(),SymbolError>{
-        match self.symbol_tables.last_mut() {//last_mut()返回栈顶元素(即Vec最后一个元素)的可变引用
+        match self.symbol_table.last_mut() {//last_mut()返回栈顶元素(即Vec最后一个元素)的可变引用
             Some(table) => {
-                table.insert(name, entry);
+                table.insert(name.to_string(), entry);
                 Ok(())
             }
             None => Err(SymbolError::NoActiveScope),
         }
     }
 
-    //添加新符号到当前作用域
+    //添加新符号表（进入新作用域）
     pub fn add_table(&mut self){
         self.symbol_table.push(HashMap::new());
     }
 
-    //删除符号表
+    //删除符号表（退出当前作用域）
     pub fn delete_table(&mut self){
         self.symbol_table.pop();
     }
-
 }
 
+#[derive(Debug, Clone)]
 pub enum SymbolTableEntry {
     Variable(TypeKind, Value), // 变量,注意这里的Value是koopa的Value类型
-    Constant(TypeKind,i32), // 常量
+    Constant(TypeKind, i32), // 常量
     Function(Function), // 函数
 }
 
