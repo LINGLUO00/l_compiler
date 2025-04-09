@@ -1,6 +1,7 @@
 use koopa::ir::entities::{BasicBlock, Function, Value, ValueData}; // Koopa IR builder
 use koopa::ir::{Program, Type, TypeKind}; // All the symbol defined in the AST
 use std::collections::HashMap;
+use std::fmt;
 
 //代码生成上下文管理
 
@@ -157,25 +158,63 @@ impl SymbolTableStack{
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum SymbolTableEntry {
-    Variable(TypeKind, Value), // 变量,注意这里的Value是koopa的Value类型
-    Constant(TypeKind, i32), // 常量
-    Function(Function), // 函数
+// 符号表条目
+pub struct SymbolTableEntry {
+    pub data: SymbolData,
 }
 
-impl std::fmt::Debug for SymbolTableEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SymbolTableEntry::Variable(ty, val) => {
-                write!(f, "Variable({:?}, {:?})", ty, val)
+// 符号数据类型
+pub enum SymbolData {
+    Variable(TypeKind, Value), // 变量,注意这里的Value是koopa的Value类型
+    Constant(TypeKind, i32),   // 常量
+    Function(Function),        // 函数
+}
+
+// 手动实现Debug特性
+impl fmt::Debug for SymbolTableEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.data {
+            SymbolData::Variable(_, val) => {
+                write!(f, "Variable({:?})", val)
             }
-            SymbolTableEntry::Constant(ty, val) => {
-                write!(f, "Constant({:?}, {:?})", ty, val)
+            SymbolData::Constant(_, val) => {
+                write!(f, "Constant({:?})", val)
             }
-            SymbolTableEntry::Function(func) => {
+            SymbolData::Function(func) => {
                 write!(f, "Function({:?})", func)
             }
+        }
+    }
+}
+
+// 为SymbolTableEntry添加构造方法
+impl SymbolTableEntry {
+    pub fn variable(ty: TypeKind, val: Value) -> Self {
+        Self { 
+            data: SymbolData::Variable(ty, val)
+        }
+    }
+    
+    pub fn constant(ty: TypeKind, val: i32) -> Self {
+        Self {
+            data: SymbolData::Constant(ty, val)
+        }
+    }
+    
+    pub fn function(func: Function) -> Self {
+        Self {
+            data: SymbolData::Function(func)
+        }
+    }
+}
+
+// 添加Clone实现
+impl Clone for SymbolTableEntry {
+    fn clone(&self) -> Self {
+        match &self.data {
+            SymbolData::Variable(ty, val) => Self::variable(ty.clone(), *val),
+            SymbolData::Constant(ty, val) => Self::constant(ty.clone(), *val),
+            SymbolData::Function(func) => Self::function(*func),
         }
     }
 }

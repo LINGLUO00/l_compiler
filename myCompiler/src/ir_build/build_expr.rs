@@ -17,13 +17,20 @@ pub enum IRExprBuildResult {
     Value(Value),
 }
 
+#[derive(Debug)]
+pub enum IRLeftValBuildResult {
+    Const(i32),
+    TempVal(Value),
+    Addr(Value),
+}
+
 impl IRBuildable for Expr{
     type Output = IRExprBuildResult;
     fn ir_buildable(
         &self,
         program:&mut Program,
         ctx:& mut IRBuilderCtx,
-    )->Result<IRExprBuildResult, String>{
+    )->Result<Self::Output, String>{
         match self{
             Expr::LogicOrExpr(or_exp)=>or_exp.ir_buildable(program, ctx),
         }
@@ -90,7 +97,7 @@ impl IRBuildable for LogicOrExpr {
         &self,
         program: &mut Program,
         ctx: &mut IRBuilderCtx,
-    ) -> Result<IRExprBuildResult, String> {
+    ) -> Result<Self::Output, String> {
         match self {
             //如果当前逻辑或表达式是一个单一的逻辑与表达式（LAndExp），直接调用其 ir_buildable 方法生成对应的 IR
             LogicOrExpr::LogicAndExpr(exp) => exp.ir_buildable(program, ctx),
@@ -120,7 +127,7 @@ impl IRBuildable for LogicOrExpr {
                             zero,
                         );
                         let branch_inst = create_local_value(program, ctx).branch(should_continue, block1, block_end);
-                        emit_instructions(program,ctx,[result_ptr, store_inst, should_continue, branch_inst],);
+                        emit_instructions(program, ctx, [result_ptr, store_inst, should_continue, branch_inst]);
                         //在 block1 中构建 exp2 的值，并将其结果存储到 result_ptr 中
                         ctx.current_block = Some(block1);
                         //递归构建 exp2 的 IR
@@ -139,7 +146,7 @@ impl IRBuildable for LogicOrExpr {
                         };
                         let store_new_inst = create_local_value(program, ctx).store(value2, result_ptr);
                         let jmp_inst = create_local_value(program, ctx).jump(block_end);
-                        emit_instructions(program,ctx,[store_new_inst, jmp_inst],);
+                        emit_instructions(program, ctx, [store_new_inst, jmp_inst]);
 
                         ctx.current_block = Some(block_end);
 
@@ -170,15 +177,13 @@ impl IRBuildable for LogicOrExpr {
     }
 }
 
-//
 impl IRBuildable for LogicAndExpr {
     type Output = IRExprBuildResult;
     fn ir_buildable(
         &self,
         program: &mut Program,
         ctx: &mut IRBuilderCtx,
-    ) -> Result<IRExprBuildResult, String> {
-        type Output = IRExprBuildResult;
+    ) -> Result<Self::Output, String> {
         match self {
             LogicAndExpr::EqExpr(exp) => exp.ir_buildable(program, ctx),
             LogicAndExpr::BinaryLogicAndExpr(exp1, exp2) => {
@@ -257,15 +262,13 @@ impl IRBuildable for LogicAndExpr {
     }
 }
 
-//
 impl IRBuildable for EqExpr {
     type Output = IRExprBuildResult;
     fn ir_buildable(
         &self,
         program: &mut Program,
         ctx: &mut IRBuilderCtx
-    ) -> Result<IRExprBuildResult, String> {
-        type Output = IRExprBuildResult;
+    ) -> Result<Self::Output, String> {
         match self {
             EqExpr::RelExpr(exp) => exp.ir_buildable(program, ctx),
             EqExpr::BinaryEqExpr(exp1, exp2) => build_binary_from_build_results(
@@ -286,15 +289,13 @@ impl IRBuildable for EqExpr {
     }
 }
 
-//
 impl IRBuildable for RelExpr {
     type Output = IRExprBuildResult;
     fn ir_buildable(
         &self,
         program: &mut Program,
         ctx: &mut IRBuilderCtx,
-    ) -> Result<IRExprBuildResult, String> {
-        type Output = IRExprBuildResult;
+    ) -> Result<Self::Output, String> {
         match self {
             RelExpr::AddExpr(exp) => exp.ir_buildable(program, ctx),
             RelExpr::BinaryLtExpr(exp1, exp2) => build_binary_from_build_results(
@@ -329,16 +330,13 @@ impl IRBuildable for RelExpr {
     }
 }
 
-
-//
 impl IRBuildable for AddExpr {
     type Output = IRExprBuildResult;
     fn ir_buildable(
         &self,
         program: &mut Program,
         ctx: &mut IRBuilderCtx,
-    ) -> Result<IRExprBuildResult, String> {
-        type Output= IRExprBuildResult;
+    ) -> Result<Self::Output, String> {
         match self {
             AddExpr::MulExpr(exp) => exp.ir_buildable(program, ctx),
             AddExpr::BinaryAddExpr(exp1, exp2) => build_binary_from_build_results(
@@ -359,15 +357,13 @@ impl IRBuildable for AddExpr {
     }
 }
 
-//
 impl IRBuildable for MulExpr {
-    type Output= IRExprBuildResult;
+    type Output = IRExprBuildResult;
     fn ir_buildable(
         &self,
         program: &mut Program,
         ctx: &mut IRBuilderCtx,
-    ) -> Result<IRExprBuildResult, String> {
-        type Output= IRExprBuildResult;
+    ) -> Result<Self::Output, String> {
         match self {
             MulExpr::UnaryExpr(exp) => exp.ir_buildable(program, ctx),
             MulExpr::BinaryMulExpr(exp1, exp2) => build_binary_from_build_results(
@@ -395,223 +391,179 @@ impl IRBuildable for MulExpr {
     }
 }
 
-//
 impl IRBuildable for UnaryExpr {
-    type Output= IRExprBuildResult;
+    type Output = IRExprBuildResult;
     fn ir_buildable(
         &self,
         program: &mut Program,
         ctx: &mut IRBuilderCtx,
-    ) -> Result<IRExprBuildResult, String> {
+    ) -> Result<Self::Output, String> {
         match self {
             UnaryExpr::PrimaryExpr(exp) => exp.ir_buildable(program, ctx),
             UnaryExpr::UnaryPlusExpr(exp) => exp.ir_buildable(program, ctx),
-            UnaryExpr::UnaryMinusExpr(exp) => build_binary_from_build_results(
-                IRExprBuildResult::Const(0),
-                exp.ir_buildable(program, ctx)?,
-                program,
-                ctx,
-                koopa::ir::BinaryOp::Sub,
-            ),
-            UnaryExpr::UnaryNotExpr(exp) => build_binary_from_build_results(
-                IRExprBuildResult::Const(0),
-                exp.ir_buildable(program, ctx)?,
-                program,
-                ctx,
-                koopa::ir::BinaryOp::Eq,
-            ),
-            UnaryExpr::FuncCall(func_id, param_exps) => {
-                let callee_func = match ctx//callee是caller的反义词
-                    .function_table
-                    .get(&func_id.ident)
-                    .cloned()
-                {
-                    Some(f) => Ok(f),
-                    None => Err(format!("Undeclared FuncCall symbol: {}", &func_id.ident)),
-                }?;
-                let TypeKind::Function(form_param_types, _) = 
-                    program.func(callee_func).ty().kind() 
-                    else {panic!("Should be a TypeKind::Function")};
-                let form_param_types = form_param_types.clone();
-                if param_exps.len() != form_param_types.len() {
-                    return Err(format!(
-                        "The parameter number of function '{}' is incorrect! Expected {} parameters, but got {}.",
-                        &func_id.content, form_param_types.len(), param_exps.len()
-                    ));
+            UnaryExpr::UnaryMinusExpr(exp) => {
+                let exp_result = exp.ir_buildable(program, ctx)?;
+                if let IRExprBuildResult::Const(int) = exp_result {
+                    Ok(IRExprBuildResult::Const(-int))
+                } else {
+                    build_binary_from_build_results(
+                        IRExprBuildResult::Const(0),
+                        exp_result,
+                        program,
+                        ctx,
+                        koopa::ir::BinaryOp::Sub,
+                    )
                 }
-                let mut real_params = vec![];
-                for i in 0..param_exps.len() {
-                    let real_param = match param_exps[i].ir_buildable(program, ctx)? {
-                        IRExprBuildResult::Const(int) => {
-                            create_local_value(program, ctx).integer(int)
-                        }
-                        IRExprBuildResult::Value(v) => v,
+            },
+            UnaryExpr::UnaryNotExpr(exp) => {
+                let exp_result = exp.ir_buildable(program, ctx)?;
+                if let IRExprBuildResult::Const(int) = exp_result {
+                    Ok(IRExprBuildResult::Const((int == 0) as i32))
+                } else {
+                    build_binary_from_build_results(
+                        IRExprBuildResult::Const(0),
+                        exp_result,
+                        program,
+                        ctx,
+                        koopa::ir::BinaryOp::Eq,
+                    )
+                }
+            },
+            UnaryExpr::FuncCall(ident, args) => {
+                // 查找函数并克隆函数引用，避免后续可变借用冲突
+                let func_ref = match ctx.function_table.get(&ident.ident) {
+                    Some(func) => *func, // 解引用并获取值的拷贝
+                    None => return Err(format!("Function {} not found", ident.ident)),
+                };
+                
+                // 处理参数
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    let arg_result = arg.ir_buildable(program, ctx)?;
+                    let arg_value = match arg_result {
+                        IRExprBuildResult::Const(int) => 
+                            create_local_value(program, ctx).integer(int),
+                        IRExprBuildResult::Value(value) => value,
                     };
-                    // Here the real_param can only be local.
-                    let real_param_type = get_valuedata(real_param, program, ctx)
-                        .ty()
-                        .clone();
-                    if real_param_type != form_param_types[i] {
-                        return Err(format!(
-                            "The parameter type of function '{}' is incorrect! Wanted {}, but got {}.",
-                            &func_id.content,
-                            form_param_types[i], real_param_type
-                        ));
-                    }
-                    real_params.push(real_param);
+                    arg_values.push(arg_value);
                 }
-                let call_inst = create_local_value(program, ctx)
-                    .call(callee_func.clone(), real_params);
+                
+                // 创建函数调用 - 使用已保存的函数引用
+                let call_inst = create_local_value(program, ctx).call(func_ref, arg_values);
                 emit_instructions(program, ctx, [call_inst]);
+                
                 Ok(IRExprBuildResult::Value(call_inst))
-            }
+            },
         }
     }
 }
 
-//
-impl IRBuildable for PrimaryExp {
-    type Output = IRExprBuildResult;
-    fn ir_buildable(
-        &self,
-        program: &mut Program,
-        ctx: &mut IRBuilderCtx,
-    ) -> Result<IRExprBuildResult, String> {
-        match self {
-            PrimaryExpr::BracedExpr(exp) => exp.ir_buildable(program, ctx),
-            PrimaryExpr::LeftVal(left_val) => {
-                let result = left_val.ir_buildable(program, ctx)?;
-                match result {
-                    IRLeftValBuildResult::Const(int) => Ok(IRExprBuildResult::Const(int)),
-                    IRLeftValBuildResult::TempVal(value) => Ok(IRExprBuildResult::Value(value)),
-                    IRLeftValBuildResult::Addr(addr) => {
-                        // Load the value from the address.
-                        match get_valuedata(addr, program, ctx)
-                            .ty()
-                            .kind()
-                        {
-                            TypeKind::Pointer(_base_type) => {
-                                let load_inst =create_local_value(program, ctx).load(addr);
-                                emit_instructions(program,ctx,[load_inst],);
-                                Ok(IRExprBuildResult::Value(load_inst))
-                            }
-                            _ => {
-                                panic!("LeftVal (as an address) must be a pointer to something!")
-                            }
-                        }
-                    }
-                }
-            }
-            PrimaryExp::Literal(number) => number.ir_buildable(program, ctx),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum IRLeftValBuildResult {
-    Const(i32),
-    TempVal(Value),
-    Addr(Value),
-}
-
-//
+// 实现 IRBuildable for LeftVal
 impl IRBuildable for LeftVal {
     type Output = IRLeftValBuildResult;
+    
     fn ir_buildable(
         &self,
         program: &mut Program,
         ctx: &mut IRBuilderCtx,
-    ) -> Result<IRLeftValBuildResult, String> {
-        let LeftVal::Default(ident, index_exps) = self;
-        match ctx.symbol_table.get_symbol(&ident.base_type) {
-            Some(SymbolTableEntry::Variable(_, ptr)) => {
-                let ptr = ptr.clone();
-                // Build indexes.
-                let mut index_values = vec![];
-                for exp in index_exps {
-                    let ir_buildable = exp.ir_buildable(program, ctx)?;
-                    index_values.push(match ir_buildable {
-                        IRExprBuildResult::Const(int) => {
-                            create_local_value(program, ctx)
-                                .integer(int)
+    ) -> Result<Self::Output, String> {
+        match self {
+            LeftVal::NormalLeftVal(ident, index_exprs) => {
+                // 首先处理没有索引的情况
+                if index_exprs.is_empty() {
+                    // 获取符号并处理
+                    let symbol_opt = ctx.symbol_table.get_symbol(&ident.ident);
+                    
+                    match symbol_opt {
+                        Some(symbol) => match &symbol.data {
+                            SymbolData::Variable(_, val) => Ok(IRLeftValBuildResult::Addr(*val)),
+                            SymbolData::Constant(_, value) => Ok(IRLeftValBuildResult::Const(*value)),
+                            SymbolData::Function(_) => Err(format!("Function {} cannot be used as a left value", ident.ident)),
+                        },
+                        None => Err(format!("Symbol not found: {}", ident.ident)),
+                    }
+                } else {
+                    // 有索引的情况 - 需要先获取变量地址和所有索引，然后处理
+                    
+                    // 1. 先获取变量的基地址
+                    let base_addr = match ctx.symbol_table.get_symbol(&ident.ident) {
+                        Some(symbol) => match &symbol.data {
+                            SymbolData::Variable(_, val) => *val,
+                            _ => return Err(format!("Cannot index into non-array variable: {}", ident.ident)),
+                        },
+                        None => return Err(format!("Symbol not found: {}", ident.ident)),
+                    };
+                    
+                    // 2. 计算所有的索引
+                    let mut processed_indices = Vec::new();
+                    for idx_expr in index_exprs {
+                        // 处理每个索引表达式
+                        let result = idx_expr.ir_buildable(program, ctx)?;
+                        match result {
+                            IRExprBuildResult::Const(int) => {
+                                let idx_val = create_local_value(program, ctx).integer(int);
+                                processed_indices.push(idx_val);
+                            },
+                            IRExprBuildResult::Value(value) => {
+                                processed_indices.push(value);
+                            },
                         }
-                        IRExprBuildResult::Value(value) => value,
-                    })
+                    }
+                    
+                    // 3. 生成数组元素访问指令
+                    let mut curr_ptr = base_addr;
+                    for idx in processed_indices {
+                        let elem_ptr = create_local_value(program, ctx).get_elem_ptr(curr_ptr, idx);
+                        emit_instructions(program, ctx, [elem_ptr]);
+                        curr_ptr = elem_ptr;
+                    }
+                    
+                    Ok(IRLeftValBuildResult::Addr(curr_ptr))
                 }
-                // Get element.
-                let result = get_element_in_ndarray(ptr, &index_values, program, ctx);
-                Ok(result)
             }
-            Some(SymbolTableEntry::Constant(_lval_type, int)) => Ok(IRLeftValBuildResult::Const(*int)),
-            _ => Err(format!("Undeclared LeftVal symbol: {}", ident.content)),
         }
     }
 }
 
+// 实现 IRBuildable for Literal
 impl IRBuildable for Literal {
     type Output = IRExprBuildResult;
+    
     fn ir_buildable(
         &self,
         _program: &mut Program,
-        _my_ir_generator_info: &mut IRBuilderCtx,
-    ) -> Result<IRExprBuildResult, String> {
+        _ctx: &mut IRBuilderCtx,
+    ) -> Result<Self::Output, String> {
         match self {
-            Literal::IntConst(int) => Ok(IRExprBuildResult::Const(*int)),
+            Literal::IntConst(val) => Ok(IRExprBuildResult::Const(*val)),
         }
     }
 }
 
-//
-/// 这是一个 LeftVal 值。它应该始终是一个局部值。
-fn get_element_in_ndarray(
-    array_or_pointer: Value,
-    indexes: &[Value],
-    program: &mut Program,
-    ctx: &mut IRBuilderCtx,
-) -> IRLeftValBuildResult {
-    if indexes.is_empty() {
-        let value_data = fetch_value_metadata(array_or_pointer, program, ctx);
-        // 查找元素。如果它是一个数组，将数组转换为 &arr[0]。
-        match value_data.ty().kind() {
-            TypeKind::Pointer(elem_type) => {
-                match elem_type.kind() {
-                    TypeKind::Array(_, _) => {
-                        // 是一个数组。
-                        let zero = create_local_value(program, ctx).integer(0);
-                        let index0_addr = create_local_value(program, ctx).get_elem_ptr(array_or_pointer, zero);
-                        emit_instructions(program, ctx, [index0_addr]);
-                        IRLeftValBuildResult::TempVal(index0_addr)
+// 实现 IRBuildable for PrimaryExpr
+impl IRBuildable for PrimaryExpr {
+    type Output = IRExprBuildResult;
+    
+    fn ir_buildable(
+        &self,
+        program: &mut Program,
+        ctx: &mut IRBuilderCtx,
+    ) -> Result<Self::Output, String> {
+        match self {
+            PrimaryExpr::Literal(lit) => lit.ir_buildable(program, ctx),
+            PrimaryExpr::LeftVal(lval) => {
+                match lval.ir_buildable(program, ctx)? {
+                    IRLeftValBuildResult::Const(val) => Ok(IRExprBuildResult::Const(val)),
+                    IRLeftValBuildResult::TempVal(val) => Ok(IRExprBuildResult::Value(val)),
+                    IRLeftValBuildResult::Addr(addr) => {
+                        // 加载地址中的值
+                        let load_inst = create_local_value(program, ctx).load(addr);
+                        emit_instructions(program, ctx, [load_inst]);
+                        Ok(IRExprBuildResult::Value(load_inst))
                     }
-                    _ => {
-                        // 不是一个数组。
-                        IRLeftValBuildResult::Addr(array_or_pointer)
-                    }
-                }
-            }
-            _ => panic!("不是一个 LeftVal: {:?}!", value_data),
-        }
-    } else {
-        let value_data = get_valuedata(array_or_pointer, program, ctx);
-        let element = match value_data.ty().kind() {
-            TypeKind::Pointer(base_type) => match base_type.kind() {
-                TypeKind::Array(_, _) => create_local_value(program, ctx)
-                    .get_elem_ptr(array_or_pointer, indexes[0]),
-                TypeKind::Pointer(_) => {
-                    let loaded_ptr = create_local_value(program, ctx)
-                        .load(array_or_pointer);
-                    emit_instructions(program, ctx, [loaded_ptr]);
-                    create_local_value(program, ctx)
-                        .get_ptr(loaded_ptr, indexes[0])
-                }
-                _ => {
-                    panic!("不是一个数组: {:?}!", value_data.name());
                 }
             },
-            _ => {
-                panic!("不是一个 LeftVal: {:?}!", value_data.name());
-            }
-        };
-        emit_instructions(program, ctx, [element]);
-        get_element_in_ndarray(element, &indexes[1..], program, ctx)
+            PrimaryExpr::BracedExpr(expr) => expr.ir_buildable(program, ctx),
+        }
     }
 }

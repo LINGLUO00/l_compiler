@@ -203,10 +203,16 @@ fn parse_nested_array_type(
     dimensions: &[usize], // 数组维度列表,[usize]为连续元素的切片，无所有权，为动态大小（DST），而vec有所有权，我们这里并不需要对维度列表进行修改，用切片可以节省内存
 ) -> TypeKind {
     if dimensions.is_empty(){
-        return arr_type.base_type.clone();
+        // 使用match处理引用问题
+        match &arr_type.base_type {
+            TypeKind::Int32 => TypeKind::Int32,
+            // 如果有其他类型，需要在这里添加对应的处理
+            _ => panic!("Unsupported array base type")
+        }
+    } else {
+        let arr_typekind = parse_nested_array_type(arr_type, &dimensions[1..]);
+        TypeKind::Array(Type::get(arr_typekind), dimensions[0])
     }
-    let arr_typekind = parse_nested_array_type(arr_type, &dimensions[1..]);
-    TypeKind::Array(Type::get(arr_typekind), dimensions[0])
 }
 
 //对于函数参数int a[3]，我们需要将其转换为Koopa IR所需的格式
@@ -224,7 +230,14 @@ fn params_type_to_koopa_ir_style(
             let dim = parse_array_dimensions(vec_dim_expr, program,ctx).unwrap();
             Type::get_pointer(Type::get(parse_nested_array_type(param_type, &dim)))
         }
-        None => Type::get(param_type.base_type.clone())
+        None => {
+            // 使用match处理引用问题
+            match &param_type.base_type {
+                TypeKind::Int32 => Type::get_i32(),
+                // 如果有其他类型，需要在这里添加对应的处理
+                _ => panic!("Unsupported parameter type")
+            }
+        }
     };
     return fmt_param_type;
 }

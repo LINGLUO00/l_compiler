@@ -1,13 +1,11 @@
-use core::panic;
 
 use crate::ast_def::decl::*;
-use koopa::ir::{builder_traits::*, entities::ValueData, values, values::Aggregate, FunctionData, Program, Type, Value};
+use koopa::ir::{builder_traits::*, FunctionData, Program, Type, TypeKind, Value};
 
 use super::{
     IRBuildable, IRBuilderCtx, 
     build_expr::IRExprBuildResult, context::*, 
     error::IRBuildResult, 
-    build_stmt::*,
     create_local_value, emit_instructions, 
     fetch_value_metadata, params_to_koopa_ir_style, 
     params_type_to_koopa_ir_style, parse_array_dimensions, parse_nested_array_type
@@ -22,15 +20,20 @@ impl IRBuildable for FuncDef{
     ) -> Result<Self::Output, String> {
         //获取函数信息
         let FuncDef::NormalFunc(ret_type,func_id ,vec_params ,block ) = self;
-        let ret_ty = Type::get(ret_type.base_type);
+        // 使用match获取base_type的具体类型，而不是直接使用引用
+        let ret_ty = match &ret_type.base_type {
+            TypeKind::Int32 => Type::get_i32(),
+            _ => return Err(format!("Unsupported return type for function {}", func_id.ident))
+        };
+        
         //处理函数的形参列表，将它们转换为Koopa IR所需的参数格式
-        let mut koopa_style_params = params_to_koopa_ir_style(vec_params,program,ctx);
+        let koopa_style_params = params_to_koopa_ir_style(vec_params,program,ctx);
         //创建函数
-        let func_data = FunctionData::with_param_names(format!("@{}",func_id), koopa_style_params, ret_ty.clone());
+        let func_data = FunctionData::with_param_names(format!("@{}",func_id.ident), koopa_style_params, ret_ty.clone());
         let func = program.new_func(func_data);
         //把函数名添加到符号表,先检查函数名是否已经存在
         if ctx.function_table.contains_key(&func_id.ident) {
-            return Err(format!("Function {} already exists", func_id));
+            return Err(format!("Function {} already exists", func_id.ident));
         }
         ctx.function_table.insert(func_id.ident.clone(), func);
 
@@ -49,8 +52,17 @@ impl IRBuildable for FuncDef{
             let formal_param=create_local_value(program, ctx).alloc(formal_param_type);
             program.func_mut(func).dfg_mut().set_value_name(formal_param, Some(format!("@{}",param_ident.ident)));
             //把形参添加到符号表
-            ctx.symbol_table.insert_symbol(param_ident.ident.as_str(),SymbolTableEntry::Variable(param_type.base_type.clone(), formal_param))
-                .map_err(|e| format!("Failed to insert symbol: {:?}", e))?;
+            // 使用match获取param_type.base_type的具体类型
+            let param_typekind = match &param_type.base_type {
+                TypeKind::Int32 => TypeKind::Int32,
+                other => return Err(format!("Unsupported parameter type for parameter {}", param_ident.ident))
+            };
+            
+            ctx.symbol_table.insert_symbol(
+                param_ident.ident.as_str(),
+                SymbolTableEntry::variable(param_typekind, formal_param)
+            ).map_err(|e| format!("Failed to insert symbol: {:?}", e))?;
+            
             //把实参赋值给形参
             let real_param = program.func(func).params()[idx];//表示访问第几个参数，因为params()返回的是一个slice
             let assign_inst = create_local_value(program, ctx).store(real_param, formal_param);
@@ -232,30 +244,29 @@ fn aggregate_to_store_insts(
         Err(err) => return Err(format!("Failed to fetch value metadata for {:?}: {}", aggr, err)),
     };
     
-    match value_data.kind() {
-        koopa::ir::ValueKind::Aggregate => {
-            //如果是聚合类型，则需要遍历每个元素
-            let aggregate_value = value_data.as_aggregate().unwrap();
-            for (i, elem) in aggregate_value.elems().iter().enumerate() {
-                let index = create_local_value(program, ctx).integer(i as i32);
-                let elem_ptr = create_local_value(program, ctx).get_elem_ptr(aggr_ptr, index);
-                emit_instructions(program, ctx, [elem_ptr]);
-                
-                let elem_data = fetch_value_metadata(*elem, program, ctx)?;
-                if let koopa::ir::ValueKind::Aggregate = elem_data.kind() {
-                    // 递归处理嵌套聚合类型
-                    aggregate_to_store_insts(*elem, elem_ptr, program, ctx)?;
-                } else {
-                    // 对于简单类型，直接存储
-                    let store_inst = create_local_value(program, ctx).store(*elem, elem_ptr);
-                    emit_instructions(program, ctx, [store_inst]);
-                }
+    // 检查值的类型
+    if let koopa::ir::ValueKind::Aggregate(aggregate_data) = value_data.kind() {
+        // 遍历聚合类型的元素
+        for (i, &elem) in aggregate_data.elems().iter().enumerate() {
+            let index = create_local_value(program, ctx).integer(i as i32);
+            let elem_ptr = create_local_value(program, ctx).get_elem_ptr(aggr_ptr, index);
+            emit_instructions(program, ctx, [elem_ptr]);
+            
+            let elem_data = fetch_value_metadata(elem, program, ctx)?;
+            // 根据元素值的类型决定处理方式
+            if let koopa::ir::ValueKind::Aggregate(_) = elem_data.kind() {
+                // 递归处理嵌套聚合类型
+                aggregate_to_store_insts(elem, elem_ptr, program, ctx)?;
+            } else {
+                // 对于简单类型，直接存储
+                let store_inst = create_local_value(program, ctx).store(elem, elem_ptr);
+                emit_instructions(program, ctx, [store_inst]);
             }
         }
-        _ => return Err(format!("Expected aggregate type")),
+        Ok(())
+    } else {
+        Err(format!("Expected aggregate type"))
     }
-
-    Ok(())
 }
 
 // 修改 InitVal 的 IRBuildable 实现
@@ -311,40 +322,56 @@ impl IRBuildable for ConstDecl{
     ) -> Result<Self::Output, String> {
         //获取常量声明,我们的定义和声明是复用的
         let ConstDecl::NormalConstDecl(the_const_type, const_defs) = self;
-        let const_type = &the_const_type.base_type;
+        
         //处理常量定义
         for const_def in const_defs {
             let ConstDef::NormalConstDef(const_ident, dim_exprs, init_val) = const_def;
             let dim = parse_array_dimensions(dim_exprs, program, ctx)?.clone();
             let result = init_val.build_with_dim(&dim, ctx.current_function.is_none(), program, ctx)?;
+            
             //在符号表中创建入口
             match result {
-                IRInitValBuildResult::Const(int)=>{
+                IRInitValBuildResult::Const(int) => {
+                    // 在每次使用时创建新的TypeKind
+                    let type_kind = match &the_const_type.base_type {
+                        TypeKind::Int32 => TypeKind::Int32,
+                        other => return Err(format!("Unsupported constant type"))
+                    };
+                    
                     ctx.symbol_table.insert_symbol(
-                        const_ident.ident.as_str(),//存储常量的标识符
-                        SymbolTableEntry::Constant(const_type.clone(), int),//存储常量的类型和值
+                        const_ident.ident.as_str(),
+                        SymbolTableEntry::constant(type_kind, int),
                     ).map_err(|e| format!("Failed to insert symbol: {:?}", e))?;
                 }
-                IRInitValBuildResult::Variable(_)=>{
+                IRInitValBuildResult::Variable(_) => {
                     //不存在const int a = b;这种情况
-                    return Err(format!("Constant {} must be initialized with a constant expression", const_ident));
+                    return Err(format!("Constant {} must be initialized with a constant expression", const_ident.ident));
                 }
                 IRInitValBuildResult::Aggregate(aggr) => {
                     //对于数组的思路：拿到数组元数据，即类型，名字等，分配空间，拿到指针列表，塞入指令集
-                    let ptr_array = if ctx.current_function.is_some(){//如果是局部变量，即当前函数存在
+                    let ptr_array = if ctx.current_function.is_some() {
+                        //如果是局部变量，即当前函数存在
                         let aggr_valuedata = fetch_value_metadata(aggr, program, ctx)?;
                         let addr = create_local_value(program, ctx).alloc(aggr_valuedata.ty().clone());
                         emit_instructions(program, ctx, [addr]);
                         aggregate_to_store_insts(aggr, addr, program, ctx)?;//把每一个值的指针都存入指令集
                         addr
-                    }else{//如果是全局变量，即当前函数不存在，声明的时候不属于任何一个函数
+                    } else {
+                        //如果是全局变量，即当前函数不存在，声明的时候不属于任何一个函数
                         let addr = program.new_value().global_alloc(aggr);
                         program.set_value_name(addr, Some(format!("@{}", const_ident.ident)));
                         addr
                     };
+                    
+                    // 在每次使用时创建新的TypeKind
+                    let type_kind = match &the_const_type.base_type {
+                        TypeKind::Int32 => TypeKind::Int32,
+                        other => return Err(format!("Unsupported constant type"))
+                    };
+                    
                     ctx.symbol_table.insert_symbol(
                         const_ident.ident.as_str(), 
-                        SymbolTableEntry::Variable(const_type.clone(), ptr_array)
+                        SymbolTableEntry::variable(type_kind, ptr_array)
                     ).map_err(|e| format!("Failed to insert symbol: {:?}", e))?;
                 }
             }
@@ -352,7 +379,6 @@ impl IRBuildable for ConstDecl{
         Ok(IRBuildResult::OK)
     }
 }
-
 
 impl IRBuildable for VarDecl{
     type Output = IRBuildResult;
@@ -363,14 +389,21 @@ impl IRBuildable for VarDecl{
     ) -> Result<Self::Output, String> {
         //获取变量声明
         let VarDecl::NormalVarDecl(values_type, var_defs) = self;
+        
         //处理变量定义
         for var_def in var_defs {
             let VarDef::NormalVarDef(var_ident, dim_exprs, init_val) = var_def;
             let dim = parse_array_dimensions(dim_exprs, program, ctx)?.clone();
+            
             //检查维度是否存在，不存在就放回原来类型，存在就返回数组类型
-            let var_type = match dim.is_empty(){
-                true => values_type.base_type.clone(),
-                false => parse_nested_array_type(values_type, &dim),
+            let var_type = if dim.is_empty() {
+                // 在每次使用时创建新的TypeKind
+                match &values_type.base_type {
+                    TypeKind::Int32 => TypeKind::Int32,
+                    other => return Err(format!("Unsupported variable type"))
+                }
+            } else {
+                parse_nested_array_type(values_type, &dim)
             };
 
             //为变量分配存储空间，存入符号表的时候，把变量变为koopa_ir的类型
@@ -404,13 +437,15 @@ impl IRBuildable for VarDecl{
                 None => {
                     //检查有没有重名
                     if ctx.function_table.contains_key(&var_ident.ident) {
-                        return Err(format!("Variable {} already exists", var_ident));
+                        return Err(format!("Variable {} already exists", var_ident.ident));
                     }
                     //分配空间
                     let var_addr = if let Some(init_val) = init_val {
                         match init_val.build_with_dim(&dim, true, program, ctx)? {
                             IRInitValBuildResult::Const(int) => {
-                                program.new_value().global_alloc(program.new_value().integer(int))
+                                // 避免多次可变借用
+                                let int_value = program.new_value().integer(int);
+                                program.new_value().global_alloc(int_value)
                             }
                             IRInitValBuildResult::Variable(_) => {
                                 return Err(format!("Global variable must be initialized with a constant expression"));
@@ -430,7 +465,7 @@ impl IRBuildable for VarDecl{
             //将变量添加到符号表
             ctx.symbol_table.insert_symbol(
                 var_ident.ident.as_str(),
-                SymbolTableEntry::Variable(var_type.clone(), var_addrs),
+                SymbolTableEntry::variable(var_type, var_addrs),
             ).map_err(|e| format!("Failed to insert symbol: {:?}", e))?;
         }
         Ok(IRBuildResult::OK)
